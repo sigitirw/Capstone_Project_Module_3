@@ -14,13 +14,13 @@ Opsional: Streamlit app `app.py` dan model pickled `telcoChurn.pkl`.
 
 ## 🗂️ Struktur Repository (disarankan)
 
-📁 Struktur Repository
 ├── Capstone_Project_Module_3_s.ipynb   # Notebook utama analisis dan modeling
 ├── data_telco_customer_churn.csv       # Dataset (jika disertakan)
 ├── telcoChurn.pkl                      # Model final dalam format pickle (opsional)
 ├── app.py                              # Aplikasi Streamlit (jika digunakan)
 ├── predictions_log.csv                 # Log prediksi (opsional)
 └── README.md                           # Dokumentasi proyek
+
 
 
 ---
