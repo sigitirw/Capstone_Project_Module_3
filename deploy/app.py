@@ -18,7 +18,7 @@ FEATURES = [
     'PaperlessBilling', 'MonthlyCharges'
 ]
 SAMPLE_CSV_NAME = "data_telco_customer_churn.csv"
-PRIMARY_CSV_NAME = "Churn.csv"
+PRIMARY_CSV_NAME = "data_telco_customer_churn.csv"
 PICKLE_NAME = "telcoChurn.pkl"
 
 # Minimal CSS for bright (not plain white) theme and nicer controls
@@ -131,7 +131,7 @@ def make_sample_dataframe() -> pd.DataFrame:
 # -----------------------
 # Load resources
 # -----------------------
-model = load_model(PICKLE_NAME)
+model = load_model("telcoChurn.pkl")
 df_sample, sample_source = try_load_csv([PRIMARY_CSV_NAME, SAMPLE_CSV_NAME])
 
 # -----------------------
