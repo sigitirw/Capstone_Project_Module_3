@@ -1,3 +1,20 @@
+i# Streamlit single-file app for Telco Customer Churn
+# Filename: app.py
+# Requirements / Run instructions (also shown inside the app):
+# 1. Install: pip install -r requirements.txt
+# 2. Run: streamlit run app.py
+# requirements.txt (short):
+# streamlit
+# pandas
+# numpy
+# joblib
+# scikit-learn
+# plotly
+# matplotlib
+# NOTE: This file assumes two files may exist in the current working dir:
+# - data_telco_customer_churn.csv (default dataset for EDA)
+# - telcoChurn.pkl (pickled scikit-learn pipeline: preprocessing + estimator)
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -18,7 +35,8 @@ PASTEL_BG = "#f2fbfa"
 ACCENT = "#0ea5a4"  # teal accent
 DEFAULT_DATAFILE = "data_telco_customer_churn.csv"
 MODEL_FILE = "telcoChurn.pkl"
-LOG_FILE = "predictions_log.csv"
+# LOG_FILE changed as requested — WARNING: this will overwrite/append to your dataset file if same name
+LOG_FILE = "data_telco_customer_churn.csv"
 
 st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="expanded")
 
@@ -69,8 +87,10 @@ def ensure_columns_for_model(X, required_cols):
 def append_prediction_log(record: dict, logfile=LOG_FILE):
     df = pd.DataFrame([record])
     if os.path.exists(logfile):
+        # append without header to avoid rewriting header of CSV
         df.to_csv(logfile, mode='a', header=False, index=False)
     else:
+        # create file (this will create the file with header)
         df.to_csv(logfile, index=False)
 
 
@@ -92,8 +112,8 @@ with st.container():
 st.sidebar.markdown('<div class="side-card">', unsafe_allow_html=True)
 menu = st.sidebar.radio("Menu", ["Home", "EDA", "Predict single customer", "Predict from file"])  # left by design
 st.sidebar.markdown('---')
-# Model status in sidebar
-model, model_err = safe_model_load(MODEL_FILE)
+# Model status in sidebar (load by explicit path 'telcoChurn.pkl')
+model, model_err = safe_model_load('telcoChurn.pkl')
 if model is not None:
     st.sidebar.success("Model loaded: telcoChurn.pkl")
 else:
@@ -332,7 +352,7 @@ elif menu == "Predict single customer":
                               'prob_churn': churn_prob}
                     try:
                         append_prediction_log(record)
-                        st.info('Prediction saved to predictions_log.csv')
+                        st.info('Prediction saved to data_telco_customer_churn.csv')
                     except Exception as e:
                         st.error(f'Failed to save log: {e}')
 
