@@ -1,438 +1,381 @@
-i# Streamlit single-file app for Telco Customer Churn
 # Filename: app.py
-# Requirements / Run instructions (also shown inside the app):
-# 1. Install: pip install -r requirements.txt
-# 2. Run: streamlit run app.py
-# requirements.txt (short):
-# streamlit
-# pandas
-# numpy
-# joblib
-# scikit-learn
-# plotly
-# matplotlib
-# NOTE: This file assumes two files may exist in the current working dir:
-# - data_telco_customer_churn.csv (default dataset for EDA)
-# - telcoChurn.pkl (pickled scikit-learn pipeline: preprocessing + estimator)
+"""
+Streamlit app untuk deployment model Telco Customer Churn
+Requirements (example):
+pip install streamlit pandas numpy plotly scikit-learn
+Jalankan:
+streamlit run app.py
+"""
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import pickle
+import io
 import os
-from datetime import datetime
 import plotly.express as px
-import plotly.graph_objects as go
-from sklearn.exceptions import NotFittedError
 
-# --------------------------
-# App constants & styling
-# --------------------------
-APP_TITLE = "Telco Customer Churn Explorer"
-APP_DESCRIPTION = "A lightweight Streamlit app for EDA and deploying a churn classification model."
-PASTEL_BG = "#f2fbfa"
-ACCENT = "#0ea5a4"  # teal accent
-DEFAULT_DATAFILE = "data_telco_customer_churn.csv"
-MODEL_FILE = "telcoChurn.pkl"
-# LOG_FILE changed as requested — WARNING: this will overwrite/append to your dataset file if same name
-LOG_FILE = "data_telco_customer_churn.csv"
+# ------------------------------
+# Config
+# ------------------------------
+st.set_page_config(page_title="Telco Churn - Demo", layout="wide")
 
-st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="expanded")
+# Minimal CSS to create bright (but not plain-white) theme
+st.markdown(
+    """
+    <style>
+    /* page background */
+    .stApp {
+      background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
+    }
+    /* cards & containers */
+    .card {
+      background: rgba(255,255,255,0.9);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    /* accent button */
+    .stButton>button {
+      background: #0b6efd;
+      color: white;
+      border-radius: 8px;
+      padding: 8px 12px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# Custom CSS for light pastel background and white cards
-st.markdown(f"""
-<style>
-body, .reportview-container, .main {{background-color: {PASTEL_BG};}}
-.css-18e3th9 {{padding-top: 1rem}} /* adjust top padding */
-.header-card {{background: white; border-radius:12px; padding: 16px; box-shadow: 0 4px 14px rgba(0,0,0,0.08);}}
-.side-card {{background: white; border-radius:12px; padding: 12px; box-shadow: 0 3px 10px rgba(0,0,0,0.06);}}
-.small-muted {{color: #666; font-size:12px}}
-.btn-accent {{background-color: {ACCENT}; color: white}}
-</style>
-""", unsafe_allow_html=True)
+# ------------------------------
+# Helpers
+# ------------------------------
+FEATURES = [
+    'Dependents', 'tenure', 'OnlineSecurity', 'OnlineBackup',
+    'InternetService', 'DeviceProtection', 'TechSupport', 'Contract',
+    'PaperlessBilling', 'MonthlyCharges'
+]
 
-# --------------------------
-# Utility functions
-# --------------------------
+DEFAULT_DATA_FILES = ['Churn.csv', 'data_telco_customer_churn.csv']
+
 @st.cache_data
-def load_csv(path):
-    return pd.read_csv(path)
-
-@st.cache_resource
-def load_model(path):
-    """Try joblib.load then pickle.load. Returns model or raises exception."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Model file not found at {path}")
-    try:
-        return joblib.load(path)
-    except Exception:
-        with open(path, 'rb') as f:
-            return pickle.load(f)
-
-
-def safe_model_load(path):
-    try:
-        model = load_model(path)
-        return model, None
-    except Exception as e:
-        return None, str(e)
-
-
-def ensure_columns_for_model(X, required_cols):
-    missing = [c for c in required_cols if c not in X.columns]
-    return missing
-
-
-def append_prediction_log(record: dict, logfile=LOG_FILE):
-    df = pd.DataFrame([record])
-    if os.path.exists(logfile):
-        # append without header to avoid rewriting header of CSV
-        df.to_csv(logfile, mode='a', header=False, index=False)
-    else:
-        # create file (this will create the file with header)
-        df.to_csv(logfile, index=False)
-
-
-# --------------------------
-# Page: Header and Sidebar
-# --------------------------
-with st.container():
-    st.markdown('<div class="header-card">', unsafe_allow_html=True)
-    cols = st.columns([0.12, 0.88])
-    with cols[0]:
-        # small placeholder logo
-        st.image("https://upload.wikimedia.org/wikipedia/commons/8/88/OOjs_UI_icon_edit-ltr-progressive.svg", width=60)
-    with cols[1]:
-        st.markdown(f"<h1 style='margin:0;color:#083344'>{APP_TITLE}</h1>", unsafe_allow_html=True)
-        st.markdown(f"<div class='small-muted'>{APP_DESCRIPTION}</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Sidebar
-st.sidebar.markdown('<div class="side-card">', unsafe_allow_html=True)
-menu = st.sidebar.radio("Menu", ["Home", "EDA", "Predict single customer", "Predict from file"])  # left by design
-st.sidebar.markdown('---')
-# Model status in sidebar (load by explicit path 'telcoChurn.pkl')
-model, model_err = safe_model_load('telcoChurn.pkl')
-if model is not None:
-    st.sidebar.success("Model loaded: telcoChurn.pkl")
-else:
-    st.sidebar.error("Model not loaded")
-    st.sidebar.info("Expected model filename: telcoChurn.pkl (scikit-learn pipeline). Place in working directory.")
-    if model_err:
-        st.sidebar.caption(model_err)
-st.sidebar.markdown('---')
-st.sidebar.markdown("**Run instructions**")
-st.sidebar.markdown("`pip install -r requirements.txt`\n`streamlit run app.py`")
-st.sidebar.markdown('<div class="small-muted">Requirements: streamlit, pandas, numpy, joblib, scikit-learn, plotly</div>', unsafe_allow_html=True)
-st.sidebar.markdown('</div>', unsafe_allow_html=True)
-
-# --------------------------
-# Helper: load default or uploaded data
-# --------------------------
-@st.cache_data
-def get_default_dataframe(uploaded_file):
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            return df, "uploaded"
-        except Exception as e:
-            st.error(f"Failed to read uploaded file: {e}")
-            return None, None
-    else:
-        # try working dir
-        if os.path.exists(DEFAULT_DATAFILE):
+def load_csv_try(files_list):
+    for f in files_list:
+        if os.path.exists(f):
             try:
-                df = pd.read_csv(DEFAULT_DATAFILE)
-                return df, "default"
+                df = pd.read_csv(f)
+                return df, f
             except Exception as e:
-                st.warning(f"Could not read default file {DEFAULT_DATAFILE}: {e}")
-                return None, None
-        else:
-            return None, None
+                st.warning(f"File {f} ditemukan tapi gagal dibaca: {e}")
+    return None, None
 
+@st.cache_data
+def load_model(pickle_path='telcoChurn.pkl'):
+    if os.path.exists(pickle_path):
+        with open(pickle_path, 'rb') as f:
+            model = pickle.load(f)
+        return model
+    return None
 
-# --------------------------
-# Home page
-# --------------------------
-if menu == "Home":
-    st.header("Welcome")
-    st.markdown("This app provides interactive EDA and a lightweight prediction UI for telco churn models.")
-    st.markdown("#### Quick checklist")
-    st.markdown("- Put `telcoChurn.pkl` (scikit-learn pipeline) in working dir to enable predictions.\n- Optional: place `data_telco_customer_churn.csv` in working dir for default EDA.")
-    st.info("If model is missing, prediction sections will be disabled and show instructions.")
-    st.markdown('---')
-    st.subheader("About the data fields used in UI")
-    st.markdown("`Dependents, tenure, OnlineSecurity, OnlineBackup, InternetService, DeviceProtection, TechSupport, Contract, PaperlessBilling, MonthlyCharges`")
+def ensure_columns_for_model(df, required_cols):
+    # Return df with at least required cols (order). If missing, raise descriptive error.
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Data tidak memiliki kolom yang diperlukan: {missing}")
+    # reorder
+    return df[required_cols]
 
-# --------------------------
-# EDA page
-# --------------------------
-elif menu == "EDA":
-    st.header("Exploratory Data Analysis (interactive)")
-    uploaded = st.file_uploader("Upload CSV for EDA (optional)", type=['csv'])
-    df, source = get_default_dataframe(uploaded)
-    if df is None:
-        st.warning(f"No data available. Provide `{DEFAULT_DATAFILE}` in working dir or upload a CSV.")
-    else:
-        st.success(f"Using dataset from: {source}")
-        st.subheader("Preview & basic info")
-        cols1, cols2 = st.columns(2)
-        with cols1:
-            st.write(df.head())
-            st.write(f"Rows: {df.shape[0]} — Columns: {df.shape[1]}")
-        with cols2:
-            st.write(df.dtypes)
-            miss = df.isna().sum()
-            st.write(pd.DataFrame({'missing': miss[miss>0]}))
-
-        st.markdown('---')
-        # Focus features
-        focus = ['Dependents', 'tenure', 'OnlineSecurity', 'OnlineBackup', 'InternetService', 'DeviceProtection', 'TechSupport', 'Contract', 'PaperlessBilling', 'MonthlyCharges']
-        st.subheader("Focused feature overview")
-        for f in focus:
-            if f in df.columns:
-                if df[f].dtype == 'object' or pd.api.types.is_categorical_dtype(df[f]):
-                    vc = df[f].value_counts(dropna=False)
-                    st.markdown(f"**{f}** — unique values: {df[f].nunique()}")
-                    st.write(vc.reset_index().rename(columns={'index':f, f:f+'_count'}))
-                else:
-                    st.markdown(f"**{f}** — numeric stats")
-                    st.write(df[f].describe())
-            else:
-                st.markdown(f"**{f}** — *not found in dataset*", unsafe_allow_html=True)
-
-        st.markdown('---')
-        # Interactive filters
-        st.subheader("Interactive visualizations")
-        filter_col1, filter_col2 = st.columns([1,2])
-        with filter_col1:
-            if 'Contract' in df.columns:
-                contract_opts = df['Contract'].dropna().unique().tolist()
-            else:
-                contract_opts = []
-            chosen_contracts = st.multiselect("Filter: Contract", options=contract_opts, default=contract_opts)
-            tenure_min = int(df['tenure'].min()) if 'tenure' in df.columns else 0
-            tenure_max = int(df['tenure'].max()) if 'tenure' in df.columns else 72
-            chosen_tenure = st.slider("Filter: tenure range", min_value=tenure_min, max_value=tenure_max, value=(tenure_min, tenure_max), help="Filter displayed rows by tenure")
-        # apply filters
-        df_viz = df.copy()
-        if chosen_contracts:
-            if 'Contract' in df_viz.columns:
-                df_viz = df_viz[df_viz['Contract'].isin(chosen_contracts)]
-        if 'tenure' in df_viz.columns:
-            df_viz = df_viz[(df_viz['tenure']>=chosen_tenure[0]) & (df_viz['tenure']<=chosen_tenure[1])]
-
-        # churn distribution
-        if 'Churn' in df_viz.columns:
-            st.subheader('Churn distribution')
-            churn_counts = df_viz['Churn'].value_counts(dropna=False).reset_index()
-            churn_counts.columns = ['Churn','count']
-            fig = px.pie(churn_counts, names='Churn', values='count', title='Churn share')
-            st.plotly_chart(fig, use_container_width=True)
-
-            if 'Contract' in df_viz.columns:
-                st.subheader('Churn vs Contract')
-                fig2 = px.histogram(df_viz, x='Contract', color='Churn', barmode='group', title='Churn by Contract')
-                st.plotly_chart(fig2, use_container_width=True)
-
-        # categorical bar charts for selected features
-        cat_features = [f for f in focus if f in df.columns and (df[f].dtype=='object' or pd.api.types.is_categorical_dtype(df[f]))]
-        for f in cat_features:
-            fig = px.histogram(df_viz, x=f, title=f"Count by {f}")
-            st.plotly_chart(fig, use_container_width=True)
-
-        # numeric distributions
-        num_features = [f for f in ['tenure', 'MonthlyCharges'] if f in df.columns]
-        for f in num_features:
-            st.subheader(f"Distribution: {f}")
-            fig_hist = px.histogram(df_viz, x=f, nbins=40, marginal='box', title=f"Histogram + Boxplot for {f}")
-            st.plotly_chart(fig_hist, use_container_width=True)
-            st.write(df_viz[f].describe())
-
-        # correlation heatmap for numeric columns
-        st.subheader('Correlation heatmap (numeric)')
-        numcols = df_viz.select_dtypes(include=[np.number]).columns.tolist()
-        if len(numcols) >= 2:
-            corr = df_viz[numcols].corr()
-            fig_corr = px.imshow(corr, text_auto=True, aspect='auto', title='Correlation matrix')
-            st.plotly_chart(fig_corr, use_container_width=True)
-        else:
-            st.info('Not enough numeric columns for correlation matrix')
-
-# --------------------------
-# Predict single customer
-# --------------------------
-elif menu == "Predict single customer":
-    st.header("Predict single customer")
-    if model is None:
-        st.error("Prediction disabled because model could not be loaded. Place telcoChurn.pkl in working directory.")
-    else:
-        st.markdown("Use the form to input a single customer's data and get a churn probability.")
-        with st.form('single_predict_form'):
-            col1, col2 = st.columns(2)
-            with col1:
-                Dependents = st.selectbox('Dependents', options=['No','Yes'], index=0, help='Does the customer have dependents?')
-                tenure = st.number_input('tenure (months)', min_value=0, max_value=1000, value=12, step=1, help='Length of stay in months')
-                OnlineSecurity = st.selectbox('OnlineSecurity', options=['No','Yes'], index=0)
-                OnlineBackup = st.selectbox('OnlineBackup', options=['No','Yes'], index=0)
-                DeviceProtection = st.selectbox('DeviceProtection', options=['No','Yes'], index=0)
-            with col2:
-                TechSupport = st.selectbox('TechSupport', options=['No','Yes'], index=0)
-                PaperlessBilling = st.selectbox('PaperlessBilling', options=['No','Yes'], index=0)
-                InternetService = st.selectbox('InternetService', options=['DSL','Fiber optic','No'], index=0)
-                Contract = st.selectbox('Contract', options=['Month-to-month','One year','Two year'], index=0)
-                MonthlyCharges = st.number_input('MonthlyCharges', min_value=0.0, value=70.0, step=0.1)
-
-            submitted = st.form_submit_button('Predict', help='Run model prediction')
-            if submitted:
-                # Build dataframe for model input — assumes pipeline expects columns with these exact names
-                input_df = pd.DataFrame([{ 'Dependents': Dependents,
-                                           'tenure': int(tenure),
-                                           'OnlineSecurity': OnlineSecurity,
-                                           'OnlineBackup': OnlineBackup,
-                                           'InternetService': InternetService,
-                                           'DeviceProtection': DeviceProtection,
-                                           'TechSupport': TechSupport,
-                                           'Contract': Contract,
-                                           'PaperlessBilling': PaperlessBilling,
-                                           'MonthlyCharges': float(MonthlyCharges)
-                                         }])
-                # verify model supports predict_proba
-                try:
-                    proba = model.predict_proba(input_df)
-                except Exception as e:
-                    st.error(f"Model prediction failed: {e}")
-                else:
-                    # assume class order ['No','Yes'] or ['Not Churn','Churn'] — try to find churn column index
-                    classes = None
-                    try:
-                        classes = model.classes_
-                    except Exception:
-                        # if pipeline, try named steps
-                        try:
-                            classes = model[-1].classes_
-                        except Exception:
-                            classes = None
-                    # find index of positive class (something like 'Yes' or 'Churn')
-                    pos_idx = 1
-                    if classes is not None:
-                        # choose most-likely positive label containing 'Yes' or 'Churn'
-                        for i,c in enumerate(classes):
-                            if str(c).lower() in ['yes','churn','1','true']:
-                                pos_idx = i
-                        # if not found keep 1
-                    churn_prob = float(proba[0][pos_idx])
-                    churn_pct = round(churn_prob*100,1)
-                    pred_label = 'Churn' if churn_prob>=0.5 else 'Not Churn'
-
-                    # confidence badge
-                    if 0.4 <= churn_prob <= 0.6:
-                        conf_msg = 'Low confidence (near decision boundary)'
-                        st.warning(conf_msg)
-                    else:
-                        st.success(f'Prediction: {pred_label}')
-
-                    st.markdown(f"**Probability churn:** {churn_pct}%")
-
-                    # small gauge using plotly
-                    fig = go.Figure(go.Indicator(
-                        mode="gauge+number",
-                        value=churn_prob*100,
-                        domain={'x': [0, 1], 'y': [0, 1]},
-                        gauge={'axis': {'range': [0, 100]}, 'bar': {'color': ACCENT}},
-                        title={'text': "Churn probability (%)"}
-                    ))
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # save to log
-                    record = {'timestamp': datetime.utcnow().isoformat(),
-                              **{k: input_df.iloc[0][k] for k in input_df.columns},
-                              'prediction': pred_label,
-                              'prob_churn': churn_prob}
-                    try:
-                        append_prediction_log(record)
-                        st.info('Prediction saved to data_telco_customer_churn.csv')
-                    except Exception as e:
-                        st.error(f'Failed to save log: {e}')
-
-# --------------------------
-# Predict from file (batch)
-# --------------------------
-elif menu == "Predict from file":
-    st.header("Batch prediction from CSV")
-    st.markdown("Upload CSV with required features. The app will append `prediction` and `prob_churn` columns.")
-    uploaded_file = st.file_uploader("Upload CSV for batch prediction", type=['csv'])
-    if uploaded_file is None:
-        st.info('Upload a CSV file to run batch predictions.')
-    else:
+def predict_df(model, df_input):
+    # Try predict and predict_proba
+    if hasattr(model, 'predict_proba'):
+        probs = model.predict_proba(df_input)
+        preds = model.predict(df_input)
+        # If binary with classes_, map probabilities
         try:
-            df_batch = pd.read_csv(uploaded_file)
+            classes = model.classes_
+        except:
+            classes = [0,1]
+        return preds, probs, classes
+    else:
+        preds = model.predict(df_input)
+        # no proba available
+        probs = None
+        return preds, probs, None
+
+# ------------------------------
+# Load resources
+# ------------------------------
+model = load_model('telcoChurn.pkl')
+df_default, loaded_fname = load_csv_try(DEFAULT_DATA_FILES)
+
+# ------------------------------
+# Sidebar - navigation
+# ------------------------------
+with st.sidebar:
+    st.title("Telco Churn App")
+    page = st.radio("Menu", ["EDA", "Prediksi"])
+    st.markdown("---")
+    st.markdown("**Files in working dir:**")
+    st.write(", ".join([f for f in os.listdir('.') if f.endswith('.csv') or f.endswith('.pkl')]))
+    st.markdown("---")
+    st.markdown("**Notes**")
+    st.markdown("""
+    - Model pickle: `telcoChurn.pkl`
+    - Data sample: `Churn.csv` (fallback `data_telco_customer_churn.csv`)
+    - Untuk menjalankan: `pip install streamlit pandas numpy plotly scikit-learn` dan `streamlit run app.py`
+    """)
+    st.markdown("---")
+
+# ------------------------------
+# EDA Page
+# ------------------------------
+if page == "EDA":
+    st.header("Exploratory Data Analysis (EDA)")
+    st.write("Upload dataset Anda atau gunakan data sample yang ada di working directory.")
+    col1, col2 = st.columns([1,3])
+
+    with col1:
+        uploaded = st.file_uploader("Upload CSV untuk EDA (opsional)", type=['csv'])
+        use_sample = st.button("Use sample file (if available)")
+
+    df = None
+    source_note = ""
+    if uploaded:
+        try:
+            df = pd.read_csv(uploaded)
+            source_note = "Uploaded file"
         except Exception as e:
-            st.error(f"Could not read uploaded file: {e}")
-            df_batch = None
-        if df_batch is not None:
-            st.write('Preview of uploaded file')
-            st.write(df_batch.head())
-            required = ['Dependents','tenure','OnlineSecurity','OnlineBackup','InternetService','DeviceProtection','TechSupport','Contract','PaperlessBilling','MonthlyCharges']
-            missing = ensure_columns_for_model(df_batch, required)
-            if missing:
-                st.error(f"Uploaded CSV is missing required columns: {missing}")
-            elif model is None:
-                st.error("Model not loaded — cannot run batch prediction.")
+            st.error(f"Gagal membaca file upload: {e}")
+    elif use_sample:
+        if df_default is not None:
+            df = df_default.copy()
+            source_note = f"Sample file loaded: {loaded_fname}"
+        else:
+            st.warning("Sample file tidak ditemukan di working directory.")
+    else:
+        # Auto-load sample if available silently
+        if df_default is not None:
+            df = df_default.copy()
+            source_note = f"Auto sample loaded: {loaded_fname}"
+
+    if df is None:
+        st.info("Belum ada data. Upload file CSV atau letakkan 'Churn.csv' di folder kerja.")
+        st.stop()
+
+    st.markdown(f"**Sumber data:** {source_note}")
+    st.subheader("Preview data")
+    st.dataframe(df.head(200))
+
+    # Basic summaries
+    st.subheader("Ringkasan Data")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.write("Jumlah baris / kolom")
+        st.metric("Rows", df.shape[0], delta=None)
+        st.metric("Columns", df.shape[1], delta=None)
+    with c2:
+        st.write("Missing values (per column)")
+        missing = df.isnull().sum()
+        st.dataframe(missing[missing>0].sort_values(ascending=False).to_frame("missing_count"))
+    with c3:
+        st.write("Tipe data")
+        st.dataframe(df.dtypes.astype(str).to_frame("dtype"))
+
+    # Show unique values for model features
+    st.subheader("Unique values for model features")
+    uniques = {}
+    for f in FEATURES:
+        if f in df.columns:
+            uniques[f] = df[f].dropna().unique().tolist()[:50]  # limit to 50
+        else:
+            uniques[f] = "Kolom tidak ada"
+    # show as dataframe
+    uni_df = pd.DataFrame.from_dict({k: (v if isinstance(v, list) else [v]) for k,v in uniques.items()}, orient='index').transpose()
+    st.write(uni_df.fillna(""))
+
+    # Interactive plots
+    st.subheader("Visualisasi interaktif")
+    viz_cols = st.multiselect("Pilih fitur untuk plot", options=FEATURES, default=['tenure','MonthlyCharges','Contract'])
+    for col in viz_cols:
+        if col not in df.columns:
+            st.warning(f"{col} tidak ada di data, skip plot.")
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            fig = px.histogram(df, x=col, nbins=30, title=f"Distribusi: {col}")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            # bar chart with churn rate if Churn column exists
+            if 'Churn' in df.columns:
+                group = df.groupby(col)['Churn'].value_counts(normalize=False).unstack(fill_value=0)
+                # compute churn rate per category
+                temp = df.groupby(col)['Churn'].agg(['count', lambda s: (s=='Yes').mean()])
+                temp.columns = ['count', 'churn_rate']
+                fig = px.bar(temp.reset_index(), x=col, y='churn_rate', title=f"Churn rate per {col}", text='churn_rate')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                fig = px.bar(df[col].value_counts().reset_index(), x='index', y=col, title=f"Counts: {col}")
+                st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+    st.write("Selesai EDA. Gunakan menu 'Prediksi' untuk melakukan inferensi single/batch.")
+
+# ------------------------------
+# Prediction Page
+# ------------------------------
+else:
+    st.header("Prediksi Churn")
+    if model is None:
+        st.error("Model 'telcoChurn.pkl' tidak ditemukan di working directory. Letakkan file pickle dan refresh.")
+    # Prepare unique value choices from sample data if available
+    if df_default is not None:
+        sample = df_default.copy()
+    else:
+        sample = None
+
+    st.subheader("Single customer prediction")
+    with st.form("single_form"):
+        # Populate choices
+        def choices_for(col, default_vals=None):
+            if sample is not None and col in sample.columns:
+                vals = sorted(sample[col].dropna().unique().tolist())
+                # Convert numeric to list-of-values for numerics? but we'll use number_input for numerics
+                return vals
+            else:
+                return default_vals or []
+
+        # Dependents (Yes/No)
+        dep_choices = choices_for('Dependents', ['Yes','No'])
+        Dependents = st.selectbox("Dependents", options=dep_choices, index=0 if dep_choices else 0)
+
+        tenure = st.number_input("tenure (bulan)", min_value=0, max_value=240, value=12)
+
+        online_sec_choices = choices_for('OnlineSecurity', ['Yes','No','No internet service'])
+        OnlineSecurity = st.selectbox("OnlineSecurity", options=online_sec_choices, index=0 if online_sec_choices else 0)
+
+        online_backup_choices = choices_for('OnlineBackup', ['Yes','No','No internet service'])
+        OnlineBackup = st.selectbox("OnlineBackup", options=online_backup_choices, index=0 if online_backup_choices else 0)
+
+        internet_choices = choices_for('InternetService', ['DSL','Fiber optic','No'])
+        InternetService = st.selectbox("InternetService", options=internet_choices, index=0 if internet_choices else 0)
+
+        device_choices = choices_for('DeviceProtection', ['Yes','No','No internet service'])
+        DeviceProtection = st.selectbox("DeviceProtection", options=device_choices, index=0 if device_choices else 0)
+
+        tech_choices = choices_for('TechSupport', ['Yes','No','No internet service'])
+        TechSupport = st.selectbox("TechSupport", options=tech_choices, index=0 if tech_choices else 0)
+
+        contract_choices = choices_for('Contract', ['Month-to-month','One year','Two year'])
+        Contract = st.selectbox("Contract", options=contract_choices, index=0 if contract_choices else 0)
+
+        paper_choices = choices_for('PaperlessBilling', ['Yes','No'])
+        PaperlessBilling = st.selectbox("PaperlessBilling", options=paper_choices, index=0 if paper_choices else 0)
+
+        MonthlyCharges = st.number_input("MonthlyCharges (dalam satuan sama seperti data)", min_value=0.0, max_value=10000.0, value=70.0, format="%.2f")
+
+        submit_single = st.form_submit_button("Predict single")
+
+    if submit_single:
+        input_dict = {
+            'Dependents': [Dependents],
+            'tenure': [tenure],
+            'OnlineSecurity': [OnlineSecurity],
+            'OnlineBackup': [OnlineBackup],
+            'InternetService': [InternetService],
+            'DeviceProtection': [DeviceProtection],
+            'TechSupport': [TechSupport],
+            'Contract': [Contract],
+            'PaperlessBilling': [PaperlessBilling],
+            'MonthlyCharges': [MonthlyCharges]
+        }
+        input_df = pd.DataFrame(input_dict)
+        st.write("Input (preview):")
+        st.dataframe(input_df)
+
+        if model is None:
+            st.warning("Tidak ada model untuk melakukan prediksi. Pastikan telcoChurn.pkl ada.")
+        else:
+            try:
+                # If model expects full original columns, attempt to match
+                # We assume pipeline handles encoding; otherwise user must adjust.
+                preds, probs, classes = predict_df(model, input_df)
+                label = preds[0]
+                st.markdown("<div class='card'>", unsafe_allow_html=True)
+                st.subheader("Hasil Prediksi (single)")
+                # Map label to friendly
+                try:
+                    # If label is 'Yes'/'No' or 1/0
+                    display_label = "Churn" if str(label).lower() in ['yes','1','true','churn'] else "Not Churn"
+                except:
+                    display_label = str(label)
+                st.metric("Predicted label", display_label)
+
+                if probs is not None:
+                    # find index for 'Yes' if classes provided, else show both
+                    prob_text = ""
+                    if classes is not None:
+                        # build mapping
+                        proba_map = {str(c): probs[0, i] for i, c in enumerate(classes)}
+                        st.write("Probabilities:")
+                        proba_df = pd.DataFrame([proba_map])
+                        st.dataframe((proba_df*100).round(2).T.rename(columns={0:'Probability (%)'}))
+                    else:
+                        st.write("Probabilities (array):")
+                        st.dataframe(np.round(probs*100,2))
+                else:
+                    st.info("Model tidak menyediakan predict_proba.")
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Gagal melakukan prediksi: {e}")
+
+    st.markdown("---")
+    st.subheader("Batch prediction (upload CSV)")
+    st.markdown("Upload CSV yang setidaknya memiliki kolom: " + ", ".join(FEATURES))
+    batch_file = st.file_uploader("Upload CSV untuk batch predict", type=['csv'], key='batch')
+    if batch_file is not None:
+        try:
+            batch_df = pd.read_csv(batch_file)
+        except Exception as e:
+            st.error(f"Gagal membaca file CSV: {e}")
+            batch_df = None
+
+        if batch_df is not None:
+            st.write("Preview batch data")
+            st.dataframe(batch_df.head(10))
+
+            # check for required columns
+            missing_cols = [c for c in FEATURES if c not in batch_df.columns]
+            if missing_cols:
+                st.error(f"File upload missing kolom: {missing_cols}. Sesuaikan CSV dan upload ulang.")
             else:
                 try:
-                    probs = model.predict_proba(df_batch)
+                    input_for_model = batch_df[FEATURES].copy()
+                    preds, probs, classes = predict_df(model, input_for_model)
+                    batch_df['_prediction'] = preds
+                    if probs is not None:
+                        # attach probabilities as columns
+                        if classes is not None:
+                            for i, c in enumerate(classes):
+                                batch_df[f'prob_{c}'] = probs[:, i]
+                        else:
+                            # two columns
+                            for i in range(probs.shape[1]):
+                                batch_df[f'prob_{i}'] = probs[:, i]
+                    st.success("Prediksi selesai.")
+                    st.dataframe(batch_df.head(50))
+
+                    # provide download
+                    to_download = batch_df.copy()
+                    # convert probs to percent
+                    prob_cols = [c for c in to_download.columns if c.startswith('prob_')]
+                    if prob_cols:
+                        to_download[prob_cols] = (to_download[prob_cols]*100).round(2)
+
+                    csv_buf = to_download.to_csv(index=False).encode('utf-8')
+                    st.download_button("Download predictions CSV", data=csv_buf, file_name="predictions.csv", mime="text/csv")
+
                 except Exception as e:
-                    st.error(f"Model predict_proba failed: {e}")
-                else:
-                    classes = None
-                    try:
-                        classes = model.classes_
-                    except Exception:
-                        try:
-                            classes = model[-1].classes_
-                        except Exception:
-                            classes = None
-                    pos_idx = 1
-                    if classes is not None:
-                        for i,c in enumerate(classes):
-                            if str(c).lower() in ['yes','churn','1','true']:
-                                pos_idx = i
-                    prob_churn = probs[:, pos_idx]
-                    pred_label = np.where(prob_churn>=0.5, 'Churn', 'Not Churn')
-                    df_out = df_batch.copy()
-                    df_out['prediction'] = pred_label
-                    df_out['prob_churn'] = prob_churn
+                    st.error(f"Gagal melakukan prediksi batch: {e}")
 
-                    st.success('Batch prediction completed')
-                    st.write(df_out.head())
-
-                    # download
-                    csv = df_out.to_csv(index=False).encode('utf-8')
-                    st.download_button(label='Download results as CSV', data=csv, file_name='prediction_results.csv', mime='text/csv')
-
-# --------------------------
-# End of pages
-# --------------------------
-
-# Footer: quick requirements and notes
-st.markdown('---')
-with st.expander('Run instructions & requirements'):
-    st.markdown('''
-    **Run**: `pip install -r requirements.txt` then `streamlit run app.py`
-
-    **requirements.txt** (example):
-
-    ```text
-    streamlit
-    pandas
-    numpy
-    joblib
-    scikit-learn
-    plotly
-    matplotlib
-    ```
-    ''')
-
-# End
+    st.markdown("---")
+    st.write("Catatan: Aplikasi ini mengasumsikan `telcoChurn.pkl` adalah pipeline/estimator yang menerima DataFrame dengan kolom fitur yang sesuai. Jika model Anda memerlukan preprocessing khusus, adaptasikan bagian input/preprocessing di kode ini.")
