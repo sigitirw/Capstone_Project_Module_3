@@ -38,8 +38,8 @@ ACCENT = "#0ea5a4"     # blue-tosca accent
 ACCENT2 = "#ff6b6b"    # alternative accent (coral)
 
 # Filenames (try prioritized list)
-DATA_FILENAME_CANDIDATES = ["telco_customer_churn.csv", "data_telco_customer_churn.csv", "data_telco_customer_churn (1).csv"]
-MODEL_FILENAME_CANDIDATES = ["telcoChurn.pkl", "churn.pkl", "telco_churn.pkl"]
+DATA_FILENAME_CANDIDATES = ["data_telco_customer_churn.csv"]
+MODEL_FILENAME_CANDIDATES = ["telcoChurn.pkl"]
 
 # Features of interest (as requested)
 FEATURES = [
