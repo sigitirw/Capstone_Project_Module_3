@@ -6,4 +6,5 @@ plotly >= 5.24.1
 matplotlib >= 3.10.0
 seaborn >= 0.13.2
 imbalanced-learn >= 0.13.0
+skikit-learn >= 1.6.1
 shap
