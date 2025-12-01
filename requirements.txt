@@ -4,3 +4,7 @@ numpy
 joblib
 scikit-learn
 plotly
+matplotlib
+seaborn
+imbalanced-learn
+shap
