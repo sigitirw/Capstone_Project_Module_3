@@ -93,6 +93,7 @@ Hasil perbandingan beberapa model (mean ROC-AUC):
   'clf__penalty': 'l2',
   'clf__solver': 'liblinear'
 }
+```
 ## 📊 Threshold Analysis & Classification Metrics
 
 ### **Default Threshold (0.5) — Tuned Model**
