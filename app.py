@@ -1,14 +1,4 @@
 # app.py
-"""
-Streamlit app (single-file) untuk deployment model klasifikasi Customer Churn.
-- EDA interaktif (upload CSV atau baca telco_customer_churn.csv dari working dir)
-- Predict single customer (form)
-- Predict from file (batch upload + download)
-- Load model from telcoChurn.pkl (fallback churn.pkl)
-- Save prediction logs to predictions_log.csv
-- Lightweight explainability: feature_importances_ or SHAP if available
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -225,9 +215,8 @@ with col_left:
     st.markdown('<div class="title">Telco Customer Churn App</div>', unsafe_allow_html=True)
     st.markdown('<div class="muted">Interactive EDA & model inference — upload dataset or use default CSV. Single-file app.</div>', unsafe_allow_html=True)
 with col_right:
-    # optional small logo; if you have local image, replace with st.image("logo.png")
-    st.image("https://raw.githubusercontent.com/plotly/datasets/master/logo/newplotly.png", width=64)
-
+    # Tampilkan logo lokal
+    st.image("telcoChurn.png", width=64) # Pastikan nama file cocok dengan yang ada di repo
 st.markdown("---")
 
 # ---------- HOME ----------
