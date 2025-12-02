@@ -19,6 +19,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 import warnings
+from sklearn.compose import _column_transformer, ColumnTransformer
 
 warnings.filterwarnings("ignore")
 
